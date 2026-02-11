@@ -5,10 +5,12 @@ const state = {
         age: null,
         colors: null,
         note: null,
-        occasion: null
+        occasion: null,
+        noteText: null
     },
     isGenerating: false,
-    isWaitingForNoteText: false
+    isWaitingForNoteText: false,
+    currentImageUrl: null
 };
 
 // Вопросы для опроса
@@ -45,7 +47,7 @@ const questions = [
             { text: 'Подросток (13-19 лет)', icon: 'fas fa-user-graduate', value: 'подросток' },
             { text: 'Молодой (20-35 лет)', icon: 'fas fa-user', value: 'молодой' },
             { text: 'Взрослый (36-55 лет)', icon: 'fas fa-user-tie', value: 'взрослый' },
-            { text: 'Пожилая женщина/мужчина', icon: 'fas fa-user-friends', value: 'пожилой' },
+            { text: 'Пожилой (55+)', icon: 'fas fa-user-friends', value: 'пожилой' },
             { text: 'Не важно', icon: 'fas fa-times', value: 'не важно' }
         ]
     },
@@ -53,12 +55,12 @@ const questions = [
         id: 'colors',
         text: 'Какие цвета предпочтительны?',
         options: [
-            { text: 'Нежные пастельные', icon: 'fas fa-pastafarianism', value: 'пастельные', color: '#ffd6e7' },
-            { text: 'Яркие и сочные', icon: 'fas fa-fire', value: 'яркие', color: '#ff6b6b' },
-            { text: 'Бело-зеленые', icon: 'fas fa-leaf', value: 'бело-зеленые', color: '#51cf66' },
-            { text: 'Классические красные', icon: 'fas fa-heart', value: 'красные', color: '#ff6b6b' },
-            { text: 'Розовые тона', icon: 'fas fa-heart', value: 'розовые', color: '#ff8787' },
-            { text: 'Синие/фиолетовые', icon: 'fas fa-moon', value: 'синие', color: '#748ffc' }
+            { text: 'Нежные пастельные', icon: 'fas fa-pastafarianism', value: 'пастельные' },
+            { text: 'Яркие и сочные', icon: 'fas fa-fire', value: 'яркие' },
+            { text: 'Бело-зеленые', icon: 'fas fa-leaf', value: 'бело-зеленые' },
+            { text: 'Красные/бордовые', icon: 'fas fa-heart', value: 'красные' },
+            { text: 'Розовые', icon: 'fas fa-heart', value: 'розовые' },
+            { text: 'Синие/фиолетовые', icon: 'fas fa-moon', value: 'синие' }
         ]
     },
     {
@@ -86,6 +88,10 @@ const progressFill = document.getElementById('progressFill');
 const progressStep = document.getElementById('progressStep');
 const root = document.documentElement;
 
+// Конфигурация Replicate API
+const REPLICATE_API_TOKEN = 'YOUR_REPLICATE_API_TOKEN'; // Замените на ваш токен
+const REPLICATE_API_URL = 'https://api.replicate.com/v1/predictions';
+
 // Функция для обновления прогресс-бара
 function updateProgressBar() {
     const progress = ((state.currentQuestion) / 5) * 100;
@@ -99,10 +105,10 @@ function showTypingIndicator() {
     const typingDiv = document.createElement('div');
     typingDiv.className = 'typing-indicator';
     typingDiv.innerHTML = `
-                <div class="typing-dot"></div>
-                <div class="typing-dot"></div>
-                <div class="typing-dot"></div>
-            `;
+        <div class="typing-dot"></div>
+        <div class="typing-dot"></div>
+        <div class="typing-dot"></div>
+    `;
     chatMessages.appendChild(typingDiv);
     chatMessages.scrollTop = chatMessages.scrollHeight;
     return typingDiv;
@@ -121,42 +127,40 @@ function addMessage(text, isUser = false, options = null) {
     messageDiv.className = `message ${isUser ? 'user-message' : 'ai-message'}`;
 
     let messageHTML = `
-                <div class="message-header">
-                    <i class="fas ${isUser ? 'fa-user' : 'fa-spa'}"></i>
-                    <span>${isUser ? 'Вы' : 'FloraAI'}</span>
-                </div>
-                <p>${text}</p>
-            `;
+        <div class="message-header">
+            <i class="fas ${isUser ? 'fa-user' : 'fa-spa'}"></i>
+            <span>${isUser ? 'Вы' : 'FloraAI'}</span>
+        </div>
+        <p>${text}</p>
+    `;
 
-    // Если переданы опции, добавляем их
     if (options && !isUser) {
         messageHTML += `
-                    <div class="options-container">
-                        <div class="options-title">Выберите подходящий вариант:</div>
-                        <div class="options-grid" id="optionsGrid">
-                `;
+            <div class="options-container">
+                <div class="options-title">Выберите подходящий вариант:</div>
+                <div class="options-grid" id="optionsGrid">
+        `;
 
         options.forEach((option, index) => {
             messageHTML += `
-                        <button class="option-btn" data-index="${index}" data-value="${option.value}">
-                            <div class="option-icon">
-                                <i class="${option.icon}"></i>
-                            </div>
-                            ${option.text}
-                        </button>
-                    `;
+                <button class="option-btn" data-index="${index}" data-value="${option.value}">
+                    <div class="option-icon">
+                        <i class="${option.icon}"></i>
+                    </div>
+                    ${option.text}
+                </button>
+            `;
         });
 
         messageHTML += `
-                        </div>
-                    </div>
-                `;
+                </div>
+            </div>
+        `;
     }
 
     messageDiv.innerHTML = messageHTML;
     chatMessages.appendChild(messageDiv);
 
-    // Добавляем обработчики для кнопок опций
     if (options && !isUser) {
         setTimeout(() => {
             const optionButtons = messageDiv.querySelectorAll('.option-btn');
@@ -165,21 +169,16 @@ function addMessage(text, isUser = false, options = null) {
                     const index = parseInt(this.getAttribute('data-index'));
                     const value = this.getAttribute('data-value');
 
-                    // Убираем выделение со всех кнопок
                     optionButtons.forEach(btn => btn.classList.remove('selected'));
-                    // Выделяем выбранную кнопку
                     this.classList.add('selected');
 
-                    // Сохраняем ответ
                     handleOptionSelect(value);
                 });
             });
         }, 100);
     }
 
-    // Прокручиваем вниз
     chatMessages.scrollTop = chatMessages.scrollHeight;
-
     return messageDiv;
 }
 
@@ -188,37 +187,30 @@ function handleOptionSelect(value) {
     const currentQuestion = questions[state.currentQuestion];
     state.answers[currentQuestion.id] = value;
 
-    // Показываем выбранный ответ от пользователя
     const selectedOption = currentQuestion.options.find(opt => opt.value === value);
     addMessage(selectedOption.text, true);
 
-    // ЕСЛИ пользователь выбрал "свой текст записки"
     if (currentQuestion.id === 'note' && value === 'своя') {
         state.isWaitingForNoteText = true;
         addMessage('Напишите текст записки ✍️', false);
-
-        // показываем поле ввода ПОСЛЕ сообщения
+        
         setTimeout(() => {
             chatInputContainer.style.display = 'flex';
             userInput.focus();
         }, 400);
-
-        return; //  НЕ переходим к следующему вопросу
+        
+        return;
     }
 
-    // Переходим к следующему вопросу
     setTimeout(() => {
         state.currentQuestion++;
+        updateProgressBar();
 
         if (state.currentQuestion < questions.length) {
-            // Задаем следующий вопрос
             askNextQuestion();
         } else {
-            // Все вопросы заданы, начинаем генерацию букета
             startBouquetGeneration();
         }
-
-        updateProgressBar();
     }, 800);
 }
 
@@ -228,16 +220,163 @@ function askNextQuestion() {
 
     setTimeout(() => {
         removeTypingIndicator(typingIndicator);
-
         const question = questions[state.currentQuestion];
         addMessage(question.text, false, question.options);
-
         chatMessages.scrollTop = chatMessages.scrollHeight;
     }, 1000);
 }
 
+// Функция для генерации промпта на основе ответов пользователя
+function generatePrompt() {
+    const forWhom = state.answers.forWhom || 'близкий человек';
+    const occasion = state.answers.occasion || 'особый случай';
+    const age = state.answers.age || 'взрослый';
+    const colors = state.answers.colors || 'пастельные';
+    
+    // Словарь для перевода на английский (Replicate лучше понимает английские промпты)
+    const colorMap = {
+        'пастельные': 'soft pastel pink, lavender, mint green, pale yellow',
+        'яркие': 'vibrant bright orange, hot pink, electric blue, yellow',
+        'бело-зеленые': 'elegant white and green, white roses, eucalyptus',
+        'красные': 'romantic red roses, deep burgundy, crimson',
+        'розовые': 'delicate pink peonies, blush roses, light pink',
+        'синие': 'mystical blue hydrangeas, purple irises, lavender'
+    };
+    
+    const occasionMap = {
+        '8 марта': 'International Womens Day spring bouquet',
+        'свадьба': 'elegant wedding bridal bouquet',
+        'день рождения': 'festive birthday celebration bouquet',
+        'годовщина': 'romantic anniversary love bouquet',
+        'без повода': 'surprise just because beautiful bouquet',
+        'извинение': 'apology forgiveness romantic bouquet'
+    };
+    
+    const forWhomMap = {
+        'супруг(а)': 'for beloved spouse',
+        'родитель': 'for dear parent',
+        'возлюбленный(ая)': 'for romantic partner',
+        'коллега': 'for colleague professional',
+        'друг': 'for dear friend',
+        'себе': 'for self-care home decoration'
+    };
+    
+    const ageMap = {
+        'ребенок': 'playful cheerful colors',
+        'подросток': 'modern trendy style',
+        'молодой': 'youthful vibrant',
+        'взрослый': 'elegant sophisticated',
+        'пожилой': 'classic timeless',
+        'не важно': 'balanced'
+    };
+    
+    // Составляем промпт
+    let prompt = `Professional photography of a beautiful flower bouquet, ${colorMap[colors] || 'mixed colorful flowers'}, `;
+    prompt += `${occasionMap[occasion] || 'elegant floral arrangement'}, `;
+    prompt += `${forWhomMap[forWhom] || 'for special person'}, `;
+    prompt += `${ageMap[age] || 'elegant'}, `;
+    prompt += `highly detailed, photorealistic, 8k resolution, professional lighting, soft shadows, white background, studio shot, commercial product photography, ultra realistic, sharp focus, florist quality, fresh flowers, dew drops, premium arrangement`;
+    
+    // Добавляем текст записки, если есть
+    if (state.answers.note && state.answers.note !== 'нет' && state.answers.note !== 'не знаю') {
+        if (state.answers.note === 'своя' && state.answers.noteText) {
+            prompt += `, with a small elegant note card that says "${state.answers.noteText}"`;
+        } else if (state.answers.note === 'с днем рождения') {
+            prompt += `, with a birthday card saying "Happy Birthday!"`;
+        } else if (state.answers.note === 'романтичная') {
+            prompt += `, with a romantic love note card`;
+        }
+    }
+    
+    console.log('Generated prompt:', prompt);
+    return prompt;
+}
+
+// Функция для генерации изображения через Replicate API
+async function generateImageWithReplicate(prompt) {
+    try {
+        // Используем модель SDXL для лучшего качества
+        const response = await fetch(REPLICATE_API_URL, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Token ${REPLICATE_API_TOKEN}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                version: "stability-ai/sdxl:39ed52f2a78e934b3ba6e2a89f5b1c712de7dfea535525255b1aa35c5565e08b",
+                input: {
+                    prompt: prompt,
+                    negative_prompt: "ugly, tiling, poorly drawn, out of frame, disfigured, deformed, body out of frame, bad anatomy, watermark, grain, signature, cut off, draft, blurry, artificial, low quality, plastic, fake flowers",
+                    width: 1024,
+                    height: 1024,
+                    num_outputs: 1,
+                    scheduler: "DPMSolverMultistep",
+                    num_inference_steps: 30,
+                    guidance_scale: 7.5
+                }
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const prediction = await response.json();
+        console.log('Prediction started:', prediction);
+
+        // Проверяем статус генерации
+        let result = await checkPredictionStatus(prediction.urls.get);
+        
+        // Возвращаем URL изображения
+        return result.output[0];
+
+    } catch (error) {
+        console.error('Error generating image:', error);
+        throw error;
+    }
+}
+
+// Функция для проверки статуса генерации
+async function checkPredictionStatus(getUrl) {
+    let attempts = 0;
+    const maxAttempts = 60; // Максимум 60 секунд
+
+    while (attempts < maxAttempts) {
+        try {
+            const response = await fetch(getUrl, {
+                headers: {
+                    'Authorization': `Token ${REPLICATE_API_TOKEN}`
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const prediction = await response.json();
+            console.log('Prediction status:', prediction.status);
+
+            if (prediction.status === 'succeeded') {
+                return prediction;
+            } else if (prediction.status === 'failed') {
+                throw new Error('Prediction failed');
+            }
+
+            // Ждем 1 секунду перед следующей проверкой
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            attempts++;
+
+        } catch (error) {
+            console.error('Error checking status:', error);
+            throw error;
+        }
+    }
+
+    throw new Error('Timeout: Generation took too long');
+}
+
 // Функция для начала генерации букета
-function startBouquetGeneration() {
+async function startBouquetGeneration() {
     state.isGenerating = true;
 
     // Скрываем прогресс-бар вопросов
@@ -248,87 +387,138 @@ function startBouquetGeneration() {
 
     setTimeout(() => {
         removeTypingIndicator(typingIndicator);
-
-        // Показываем сообщение о начале генерации
-        addMessage("Отлично! Я получила все ваши ответы🌸 Сейчас создаю уникальный букет специально для вас...", false);
-
-        // Имитируем процесс генерации
-        setTimeout(() => {
-            showGeneratedBouquet();
-            chatMessages.appendChild(resultDiv);
-        }, 2500);
+        addMessage("Отлично! Я получила все ваши ответы🌸 Сейчас создаю уникальный букет специально для вас с помощью искусственного интеллекта...", false);
+        
+        // Запускаем реальную генерацию изображения
+        showGeneratedBouquet();
     }, 1500);
 }
 
 // Функция для показа сгенерированного букета
-function showGeneratedBouquet() {
+async function showGeneratedBouquet() {
     // Генерируем описание на основе ответов
     const bouquetDescription = generateBouquetDescription();
+    const prompt = generatePrompt();
 
     const resultHTML = `
-                <div class="bouquet-result">
-                    <div class="result-header">
-                        <div class="result-icon">
-                            <i class="fas fa-magic"></i>
-                        </div>
-                        <div class="result-title">Ваш уникальный букет готов!</div>
-                    </div>
-                    
-                    <div class="bouquet-image-container">
-                        <div class="image-placeholder" id="imagePlaceholder">
-                            <i class="fas fa-spinner fa-spin"></i>
-                            <div class="generating-text">Генерация изображения...</div>
-                        </div>
-                        <img class="bouquet-image" id="bouquetImage" src="" alt="Ваш уникальный букет">
-                    </div>
-                    
-                    <div class="bouquet-description" id="bouquetDescription">
-                        ${bouquetDescription}
-                    </div>
-                    
-                    <div class="bouquet-details">
-                        <div class="detail-card">
-                            <div class="detail-card-title">Для кого</div>
-                            <div class="detail-card-value">${getOptionText('forWhom')}</div>
-                        </div>
-                        <div class="detail-card">
-                            <div class="detail-card-title">Возраст</div>
-                            <div class="detail-card-value">${getOptionText('age')}</div>
-                        </div>
-                        <div class="detail-card">
-                            <div class="detail-card-title">Цвета</div>
-                            <div class="detail-card-value">${getOptionText('colors')}</div>
-                        </div>
-                        <div class="detail-card">
-                            <div class="detail-card-title">Повод</div>
-                            <div class="detail-card-value">${getOptionText('occasion')}</div>
-                        </div>
-                    </div>
-                    
-                    <div class="action-buttons">
-                        <button class="action-btn order-btn" id="orderBtn">
-                            <i class="fab fa-telegram"></i> Связаться с флористом 🌸
-                        </button>
-                        <button class="action-btn restart-btn" id="restartBtn">
-                            <i class="fas fa-redo"></i> Создать новый букет
-                        </button>
-                    </div>
+        <div class="bouquet-result">
+            <div class="result-header">
+                <div class="result-icon">
+                    <i class="fas fa-magic"></i>
                 </div>
-            `;
+                <div class="result-title">Ваш уникальный букет готов!</div>
+            </div>
+            
+            <div class="bouquet-image-container">
+                <div class="image-placeholder" id="imagePlaceholder">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    <div class="generating-text">ИИ создает ваш букет...</div>
+                    <div class="generating-subtext">Это займет около 30 секунд</div>
+                </div>
+                <img class="bouquet-image" id="bouquetImage" src="" alt="Ваш уникальный букет" style="display: none;">
+            </div>
+            
+            <div class="bouquet-description" id="bouquetDescription">
+                ${bouquetDescription}
+            </div>
+            
+            <div class="bouquet-details">
+                <div class="detail-card">
+                    <div class="detail-card-title">Для кого</div>
+                    <div class="detail-card-value">${getOptionText('forWhom')}</div>
+                </div>
+                <div class="detail-card">
+                    <div class="detail-card-title">Возраст</div>
+                    <div class="detail-card-value">${getOptionText('age')}</div>
+                </div>
+                <div class="detail-card">
+                    <div class="detail-card-title">Цвета</div>
+                    <div class="detail-card-value">${getOptionText('colors')}</div>
+                </div>
+                <div class="detail-card">
+                    <div class="detail-card-title">Повод</div>
+                    <div class="detail-card-value">${getOptionText('occasion')}</div>
+                </div>
+            </div>
+            
+            <div class="action-buttons" style="display: none;" id="actionButtons">
+                <button class="action-btn order-btn" id="orderBtn">
+                    <i class="fab fa-telegram"></i> Связаться с флористом 🌸
+                </button>
+                <button class="action-btn restart-btn" id="restartBtn">
+                    <i class="fas fa-redo"></i> Создать новый букет
+                </button>
+            </div>
+        </div>
+    `;
 
     // Создаем элемент результата
     const resultDiv = document.createElement('div');
     resultDiv.innerHTML = resultHTML;
     chatMessages.appendChild(resultDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
 
-    // Имитируем генерацию изображения
-    simulateImageGeneration();
+    // Запускаем реальную генерацию изображения
+    try {
+        // Проверяем, есть ли API токен
+        if (REPLICATE_API_TOKEN === 'YOUR_REPLICATE_API_TOKEN') {
+            throw new Error('API token not configured');
+        }
+
+        // Генерируем изображение
+        const imageUrl = await generateImageWithReplicate(prompt);
+        
+        // Показываем сгенерированное изображение
+        const imagePlaceholder = document.getElementById('imagePlaceholder');
+        const bouquetImage = document.getElementById('bouquetImage');
+        const actionButtons = document.getElementById('actionButtons');
+        
+        if (imagePlaceholder && bouquetImage) {
+            imagePlaceholder.style.display = 'none';
+            bouquetImage.src = imageUrl;
+            bouquetImage.style.display = 'block';
+            state.currentImageUrl = imageUrl;
+            
+            if (actionButtons) {
+                actionButtons.style.display = 'flex';
+            }
+            
+            addMessage("✨ Изображение готово! Этот букет создан специально для вас нейросетью на основе ваших предпочтений. Наш флорист может воссоздать его с живыми цветами!", false);
+        }
+        
+    } catch (error) {
+        console.error('Generation error:', error);
+        
+        // В случае ошибки показываем заглушку
+        const imagePlaceholder = document.getElementById('imagePlaceholder');
+        const actionButtons = document.getElementById('actionButtons');
+        
+        if (imagePlaceholder) {
+            imagePlaceholder.innerHTML = `
+                <i class="fas fa-exclamation-circle"></i>
+                <div class="generating-text">Не удалось сгенерировать изображение</div>
+                <div class="generating-subtext">${error.message === 'API token not configured' ? 
+                    'Пожалуйста, настройте API токен Replicate.com' : 
+                    'Попробуйте позже или свяжитесь с флористом'}</div>
+            `;
+        }
+        
+        if (actionButtons) {
+            actionButtons.style.display = 'flex';
+        }
+        
+        // Показываем fallback canvas изображение
+        simulateImageGeneration();
+    }
 
     // Добавляем обработчики кнопок
-    document.getElementById('orderBtn').addEventListener('click', connectToFlorist);
-    document.getElementById('restartBtn').addEventListener('click', restartQuestionnaire);
-
-    chatMessages.scrollTop = chatMessages.scrollHeight;
+    setTimeout(() => {
+        const orderBtn = document.getElementById('orderBtn');
+        const restartBtn = document.getElementById('restartBtn');
+        
+        if (orderBtn) orderBtn.addEventListener('click', connectToFlorist);
+        if (restartBtn) restartBtn.addEventListener('click', restartQuestionnaire);
+    }, 100);
 }
 
 // Функция для получения текста опции по ID вопроса
@@ -351,7 +541,6 @@ function generateBouquetDescription() {
 
     const baseDescription = descriptions[state.answers.forWhom] || 'Уникальная композиция, созданная специально для вашего случая.';
 
-    // Добавляем детали по цветам
     let colorDescription = '';
     if (state.answers.colors === 'пастельные') {
         colorDescription = 'Нежные пастельные оттенки создают ощущение лёгкости и чистоты, как утренний туман над цветущим лугом.';
@@ -361,7 +550,6 @@ function generateBouquetDescription() {
         colorDescription = 'Гармония белого и зелёного создаёт ощущение свежести и чистоты, напоминая о весеннем пробуждении природы.';
     }
 
-    // Добавляем детали по поводу
     let occasionDescription = '';
     if (state.answers.occasion === 'день рождения') {
         occasionDescription = 'Идеально подобран для дня рождения — каждый цветок несёт пожелание счастья, здоровья и радости на весь следующий год.';
@@ -374,31 +562,20 @@ function generateBouquetDescription() {
     return `${baseDescription} ${colorDescription} ${occasionDescription} Я тщательно подобрала каждый элемент, чтобы создать гармоничную композицию, которая будет радовать получателя и точно передаст ваши чувства.`;
 }
 
-// Функция для имитации генерации изображения
+// Функция для имитации генерации изображения (fallback)
 function simulateImageGeneration() {
+    const imagePlaceholder = document.getElementById('imagePlaceholder');
+    const bouquetImage = document.getElementById('bouquetImage');
+    const actionButtons = document.getElementById('actionButtons');
+    
+    if (!imagePlaceholder || !bouquetImage) return;
+    
     setTimeout(() => {
-        const imagePlaceholder = document.getElementById('imagePlaceholder');
-        const bouquetImage = document.getElementById('bouquetImage');
+        const canvas = document.createElement('canvas');
+        canvas.width = 600;
+        canvas.height = 400;
+        const ctx = canvas.getContext('2d');
 
-        // Создаем "сгенерированное" изображение на основе ответов
-        // В реальном приложении здесь будет запрос к ИИ для генерации изображения
-
-        // Определяем цветовую схему для изображения
-        let colorTheme = 'pastel';
-        if (state.answers.colors === 'яркие') colorTheme = 'bright';
-        if (state.answers.colors === 'красные') colorTheme = 'red';
-        if (state.answers.colors === 'синие') colorTheme = 'blue';
-
-        // Определяем тип букета
-        let bouquetType = 'romantic';
-        if (state.answers.forWhom === 'коллега') bouquetType = 'elegant';
-        if (state.answers.forWhom === 'себе') bouquetType = 'minimalist';
-        if (state.answers.occasion === 'свадьба') bouquetType = 'wedding';
-
-        // Используем заглушку с разными цветами в зависимости от выбора
-        // В реальном приложении здесь будет запрос к DALL-E, Stable Diffusion или другому ИИ
-
-        // Создаем градиент на основе выбранных цветов
         const gradients = {
             'пастельные': 'linear-gradient(135deg, #ffd6e7 0%, #c8f7c5 50%, #a6dcef 100%)',
             'яркие': 'linear-gradient(135deg, #ff6b6b 0%, #ffd93d 50%, #6bcf7f 100%)',
@@ -409,18 +586,7 @@ function simulateImageGeneration() {
         };
 
         const gradient = gradients[state.answers.colors] || gradients['пастельные'];
-
-        // Скрываем плейсхолдер и показываем "сгенерированное" изображение
-        imagePlaceholder.style.display = 'none';
-        bouquetImage.style.display = 'block';
-
-        // Создаем canvas для "генерации" изображения
-        const canvas = document.createElement('canvas');
-        canvas.width = 600;
-        canvas.height = 400;
-        const ctx = canvas.getContext('2d');
-
-        // Рисуем градиентный фон
+        
         const bgGradient = ctx.createLinearGradient(0, 0, 600, 400);
         bgGradient.addColorStop(0, gradient.split(' ')[2]);
         bgGradient.addColorStop(0.5, gradient.split(' ')[4]);
@@ -429,166 +595,47 @@ function simulateImageGeneration() {
         ctx.fillStyle = bgGradient;
         ctx.fillRect(0, 0, 600, 400);
 
-        // Рисуем простые фигуры в виде цветов
-        drawFlowers(ctx, colorTheme, bouquetType);
-
-        // Конвертируем canvas в data URL
+        imagePlaceholder.style.display = 'none';
         bouquetImage.src = canvas.toDataURL('image/png');
-
-        // Добавляем небольшой текст об "искусственном интеллекте"
-        addMessage("Изображение букета было сгенерировано искусственным интеллектом на основе ваших предпочтений. В реальной жизни наш флорист воссоздаст эту композицию с живыми цветами!", false);
-
-    }, 2000);
-}
-
-// Функция для рисования простых цветов на canvas
-function drawFlowers(ctx, colorTheme, bouquetType) {
-    // Определяем цвета в зависимости от темы
-    let flowerColors, stemColor;
-
-    switch (colorTheme) {
-        case 'bright':
-            flowerColors = ['#ff6b6b', '#ffd93d', '#51cf66', '#339af0'];
-            stemColor = '#2b8a3e';
-            break;
-        case 'red':
-            flowerColors = ['#ff6b6b', '#ff8787', '#ffa8a8'];
-            stemColor = '#2b8a3e';
-            break;
-        case 'blue':
-            flowerColors = ['#339af0', '#748ffc', '#5c7cfa'];
-            stemColor = '#2b8a3e';
-            break;
-        default: // pastel
-            flowerColors = ['#ffd6e7', '#c8f7c5', '#a6dcef', '#e599f7'];
-            stemColor = '#51cf66';
-    }
-
-    // Определяем количество и расположение цветов в зависимости от типа букета
-    let flowerCount, positions;
-
-    switch (bouquetType) {
-        case 'elegant':
-            flowerCount = 7;
-            positions = [
-                { x: 300, y: 200, size: 40 },
-                { x: 250, y: 180, size: 30 },
-                { x: 350, y: 180, size: 30 },
-                { x: 220, y: 220, size: 25 },
-                { x: 380, y: 220, size: 25 },
-                { x: 280, y: 250, size: 20 },
-                { x: 320, y: 250, size: 20 }
-            ];
-            break;
-        case 'minimalist':
-            flowerCount = 5;
-            positions = [
-                { x: 300, y: 200, size: 35 },
-                { x: 270, y: 180, size: 25 },
-                { x: 330, y: 180, size: 25 },
-                { x: 250, y: 220, size: 20 },
-                { x: 350, y: 220, size: 20 }
-            ];
-            break;
-        case 'wedding':
-            flowerCount = 9;
-            positions = [
-                { x: 300, y: 200, size: 45 },
-                { x: 250, y: 170, size: 35 },
-                { x: 350, y: 170, size: 35 },
-                { x: 220, y: 210, size: 30 },
-                { x: 380, y: 210, size: 30 },
-                { x: 270, y: 230, size: 25 },
-                { x: 330, y: 230, size: 25 },
-                { x: 240, y: 250, size: 20 },
-                { x: 360, y: 250, size: 20 }
-            ];
-            break;
-        default: // romantic
-            flowerCount = 8;
-            positions = [
-                { x: 300, y: 200, size: 40 },
-                { x: 260, y: 180, size: 35 },
-                { x: 340, y: 180, size: 35 },
-                { x: 230, y: 210, size: 30 },
-                { x: 370, y: 210, size: 30 },
-                { x: 280, y: 230, size: 25 },
-                { x: 320, y: 230, size: 25 },
-                { x: 300, y: 260, size: 20 }
-            ];
-    }
-
-    // Рисуем стебли
-    positions.forEach(pos => {
-        ctx.beginPath();
-        ctx.moveTo(pos.x, pos.y + pos.size / 2);
-        ctx.lineTo(pos.x, 380);
-        ctx.lineWidth = 3;
-        ctx.strokeStyle = stemColor;
-        ctx.stroke();
-    });
-
-    // Рисуем цветы
-    positions.forEach((pos, index) => {
-        const color = flowerColors[index % flowerColors.length];
-
-        // Рисуем лепестки
-        for (let i = 0; i < 6; i++) {
-            const angle = (i * Math.PI * 2) / 6;
-            const petalX = pos.x + Math.cos(angle) * pos.size * 0.8;
-            const petalY = pos.y + Math.sin(angle) * pos.size * 0.8;
-
-            ctx.beginPath();
-            ctx.ellipse(petalX, petalY, pos.size * 0.4, pos.size * 0.6, angle, 0, Math.PI * 2);
-            ctx.fillStyle = color;
-            ctx.fill();
+        bouquetImage.style.display = 'block';
+        
+        if (actionButtons) {
+            actionButtons.style.display = 'flex';
         }
-
-        // Рисуем центр цветка
-        ctx.beginPath();
-        ctx.arc(pos.x, pos.y, pos.size * 0.3, 0, Math.PI * 2);
-        ctx.fillStyle = colorTheme === 'bright' ? '#ffd93d' : '#ffffff';
-        ctx.fill();
-    });
+        
+        addMessage("⚠️ Демо-режим: используется заглушка. Для реальной генерации изображений настройте API токен Replicate.com", false);
+    }, 2000);
 }
 
 // Функция для связи с флористом
 function connectToFlorist() {
-    // Формируем сообщение для флориста на основе ответов
-    const orderDetails =
-        `Новый заказ от FloraAI:
+    let orderDetails = `Новый заказ от FloraAI:
 
 📋 Детали букета:
 • Для кого: ${getOptionText('forWhom')}
 • Возраст: ${getOptionText('age')}
 • Цвета: ${getOptionText('colors')}
-• Записка: ${getOptionText('note')}
-• Повод: ${getOptionText('occasion')}
+• Записка: ${state.answers.noteText || getOptionText('note')}
+• Повод: ${getOptionText('occasion')}`;
 
-Изображение букета сгенерировано ИИ.`;
+    if (state.currentImageUrl) {
+        orderDetails += `\n\n🔗 Ссылка на изображение букета: ${state.currentImageUrl}`;
+    }
 
-    // В реальном приложении здесь будет интеграция с Telegram ботом
-    // Например, через Telegram Bot API
+    orderDetails += `\n\nИзображение букета сгенерировано ИИ. Флорист может воссоздать эту композицию с живыми цветами.`;
 
-    // Показываем сообщение о переходе в Telegram
     addMessage("Отлично! Сейчас я перенаправлю вас в наш Telegram-чат с флористом, где вы сможете уточнить детали заказа и указать адрес доставки. 🌸", false);
 
-    // Создаем ссылку на Telegram бота
-    // В реальном приложении здесь будет реальная ссылка на бота
     const telegramBotUrl = "https://t.me/FloraAI_Florist_Bot";
 
-    // Открываем ссылку в новом окне
     setTimeout(() => {
         window.open(telegramBotUrl, '_blank');
-
-        // Добавляем инструкцию
         addMessage(`Если переход не произошел автоматически, перейдите по ссылке: <a href="${telegramBotUrl}" target="_blank">${telegramBotUrl}</a><br><br>В чате с флористом отправьте сообщение: "Хочу заказать букет, сгенерированный FloraAI"`, false);
     }, 1500);
 }
 
 // Функция для перезапуска опроса
 function restartQuestionnaire() {
-    // Сбрасываем состояние
     state.currentQuestion = 0;
     state.answers = {
         forWhom: null,
@@ -596,17 +643,13 @@ function restartQuestionnaire() {
         colors: null,
         note: null,
         occasion: null,
-        chocolate: null
+        noteText: null
     };
     state.isGenerating = false;
+    state.currentImageUrl = null;
 
-    // Очищаем чат
     chatMessages.innerHTML = '';
-
-    // Показываем прогресс-бар
     creationProgress.style.display = 'flex';
-
-    // Начинаем заново
     addMessage("Отлично! Давайте создадим новый букет. 🌸", false);
     updateProgressBar();
 
@@ -618,8 +661,6 @@ function restartQuestionnaire() {
 // Инициализация чата
 function initChat() {
     updateProgressBar();
-
-    // Начинаем опрос через 2 секунды
     setTimeout(() => {
         askNextQuestion();
     }, 2000);
@@ -634,10 +675,11 @@ sendButton.addEventListener('click', () => {
     userInput.value = '';
     userInput.style.height = 'auto';
 
-    // если ждём текст записки
     if (state.isWaitingForNoteText) {
-        state.answers.note = message; // сохраняем записку
+        state.answers.noteText = message;
+        state.answers.note = 'своя';
         state.isWaitingForNoteText = false;
+        chatInputContainer.style.display = 'none';
 
         state.currentQuestion++;
         updateProgressBar();
@@ -651,7 +693,6 @@ sendButton.addEventListener('click', () => {
         }, 600);
     }
 });
-
 
 userInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
