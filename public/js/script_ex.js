@@ -20,7 +20,7 @@ const state = {
     generationRequestId: null
 };
 
-// Вопросы для опроса (используются только когда пользователь отвечает сам)
+// Вопросы для опроса
 const questions = [
     {
         id: 'forWhom',
@@ -105,7 +105,6 @@ const root = document.documentElement;
 
 // Конфигурация
 const SITE_URL = 'http://localhost:3000';
-const TELEGRAM_BOT_LINK = '@YourVibeCheck_Bot';
 
 // Функция для обновления прогресс-бара
 function updateProgressBar() {
@@ -314,46 +313,6 @@ async function waitForGeneration(requestId) {
     throw new Error('Timeout: Generation took too long');
 }
 
-// Функция для показа сообщения о тесте для себя
-function showSelfTestMessage() {
-    const typingIndicator = showTypingIndicator();
-    
-    setTimeout(() => {
-        removeTypingIndicator(typingIndicator);
-        
-        state.orderId = 'self_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-        
-        const testLink = `https://t.me/${TELEGRAM_BOT_LINK.replace('@', '')}?start=test_${state.orderId}`;
-        
-        const message = `Мы предлагаем вам пройти небольшой тест для составления описания букета и его генерации. На основе полученных результатов я покажу, как выглядит Ваш индивидуальный и неповторимый букет!💐\n\n`;
-        
-        const messageDiv = addMessage(message, false);
-        
-        const linkDiv = document.createElement('div');
-        linkDiv.className = 'test-link-container';
-        linkDiv.innerHTML = `
-            <p><strong>Ссылка на прохождение:</strong></p>
-            <div class="link-box">
-                <a href="${testLink}" target="_blank">${testLink}</a>
-                <button class="copy-link-btn" onclick="copyToClipboard('${testLink}')">
-                    <i class="fas fa-copy"></i> Копировать
-                </button>
-            </div>
-            <p class="bot-info">Бот для тестирования: ${TELEGRAM_BOT_LINK}</p>
-        `;
-        messageDiv.appendChild(linkDiv);
-        
-        addMessage(`Нажмите на ссылку выше, чтобы начать тестирование в боте. После завершения теста я сгенерирую изображение и покажу вам результат! ✨`, false);
-        
-        state.currentStep = 'waitingForRecipient';
-        creationProgress.style.display = 'none';
-        
-        showWaitingIndicator();
-        
-        startPollingForResults();
-    }, 1000);
-}
-
 // Функция для показа сообщения о тесте для получателя
 function showRecipientTestMessage() {
     const typingIndicator = showTypingIndicator();
@@ -363,29 +322,13 @@ function showRecipientTestMessage() {
         
         state.orderId = 'order_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
         
-        const testLink = `https://t.me/${TELEGRAM_BOT_LINK.replace('@', '')}?start=test_${state.orderId}`;
-        
         const message = `Мы предлагаем получателю (адресату букета) пройти небольшой тест для составления описания букета и его генерации. На основе полученных результатов я покажу, как выглядит Ваш индивидуальный и неповторимый букет!💐\n\n`;
         
         const messageDiv = addMessage(message, false);
         
-        const linkDiv = document.createElement('div');
-        linkDiv.className = 'test-link-container';
-        linkDiv.innerHTML = `
-            <p><strong>Ссылка на прохождение:</strong></p>
-            <div class="link-box">
-                <a href="${testLink}" target="_blank">${testLink}</a>
-                <button class="copy-link-btn" onclick="copyToClipboard('${testLink}')">
-                    <i class="fas fa-copy"></i> Копировать
-                </button>
-            </div>
-            <p class="bot-info">Бот для тестирования: ${TELEGRAM_BOT_LINK}</p>
-        `;
-        messageDiv.appendChild(linkDiv);
-        
         const actionButtons = createChoiceButtons([
             {
-                text: 'Хорошо, сейчас отправлю ссылку',
+                text: 'Хорошо, сейчас отправлю ссылку получателю',
                 icon: 'fas fa-check',
                 action: () => handleSendLink()
             },
@@ -411,7 +354,24 @@ function handleSendLink() {
     setTimeout(() => {
         removeTypingIndicator(typingIndicator);
         
-        addMessage(`Отлично! Я буду ждать, пока получатель пройдет тест. Как только он завершит тестирование, я сгенерирую изображение и сразу покажу вам результат! 🌸\n\nВы можете следить за статусом здесь.`, false);
+        const testLink = `${SITE_URL}/test.html?order=${state.orderId}`;
+        
+        addMessage(`Отлично! Отправьте получателю эту ссылку для прохождения теста:`, false);
+        
+        const linkDiv = document.createElement('div');
+        linkDiv.className = 'test-link-container';
+        linkDiv.innerHTML = `
+            <div class="link-box">
+                <a href="${testLink}" target="_blank">${testLink}</a>
+                <button class="copy-link-btn" onclick="copyToClipboard('${testLink}')">
+                    <i class="fas fa-copy"></i> Копировать
+                </button>
+            </div>
+            <p style="margin-top: 10px;">После завершения теста изображение появится здесь автоматически</p>
+        `;
+        
+        const lastMessage = chatMessages.lastChild;
+        lastMessage.appendChild(linkDiv);
         
         showWaitingIndicator();
         
@@ -455,7 +415,7 @@ function handleRecipientTestComplete(imageUrl) {
         
         creationProgress.style.display = 'none';
         
-        state.currentStep = 'completed';
+        state.currentStep = 'generation';
         state.currentImageUrl = imageUrl;
     }, 1000);
 }
@@ -482,6 +442,28 @@ function handleCantReachRecipient() {
     }, 800);
 }
 
+// Функция для показа сообщения о тесте для себя
+function showSelfTestMessage() {
+    const typingIndicator = showTypingIndicator();
+    
+    setTimeout(() => {
+        removeTypingIndicator(typingIndicator);
+        
+        state.orderId = 'self_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        
+        addMessage('Давайте создадим букет специально для вас! Я задам несколько вопросов, чтобы понять ваши предпочтения.', false);
+        
+        state.recipientType = 'self';
+        state.currentStep = 'questions';
+        
+        creationProgress.style.display = 'flex';
+        
+        setTimeout(() => {
+            askNextQuestion();
+        }, 1500);
+    }, 1000);
+}
+
 // Функция для показа индикатора ожидания
 function showWaitingIndicator() {
     const waitingDiv = document.createElement('div');
@@ -493,10 +475,10 @@ function showWaitingIndicator() {
                 <i class="fas fa-spinner fa-spin"></i>
             </div>
             <div class="waiting-text">
-                <h3>Ожидаем прохождения теста</h3>
-                <p>Статус: <span class="waiting-status">ожидание</span></p>
+                <h3>Генерация вашего букета</h3>
+                <p>Статус: <span class="waiting-status">в процессе</span></p>
+                <p class="waiting-subtext">YandexART создает уникальное изображение...</p>
                 <p class="waiting-order-id">ID заказа: ${state.orderId}</p>
-                <p class="waiting-bot-info">Бот: ${TELEGRAM_BOT_LINK}</p>
             </div>
         </div>
     `;
@@ -789,7 +771,6 @@ function showGeneratedBouquet(imageUrl) {
     chatMessages.scrollTop = chatMessages.scrollHeight;
     
     state.currentImageUrl = imageUrl;
-    state.currentStep = 'completed';
 
     setTimeout(() => {
         const orderBtn = document.getElementById('orderBtn');
@@ -1056,13 +1037,6 @@ style.textContent = `
         transform: scale(1.05);
     }
     
-    .bot-info {
-        margin-top: 10px;
-        font-size: 14px;
-        opacity: 0.9;
-        font-style: italic;
-    }
-    
     .copy-notification {
         position: fixed;
         bottom: 20px;
@@ -1119,7 +1093,7 @@ style.textContent = `
         font-family: monospace;
     }
     
-    .waiting-bot-info {
+    .waiting-subtext {
         margin-top: 5px;
         font-size: 14px;
         color: #764ba2;
