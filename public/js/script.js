@@ -8,10 +8,13 @@ const state = {
         colors: null,
         note: null,
         occasion: null,
+        favoriteFlowers: null,
+        favoriteFlowersText: null,
         noteText: null
     },
     isGenerating: false,
     isWaitingForNoteText: false,
+    isWaitingForFavoriteFlowers: false,
     currentImageUrl: null,
     orderId: null,
     generationRequestId: null
@@ -68,6 +71,14 @@ const questions = [
         ]
     },
     {
+        id: 'favoriteFlowers',
+        text: 'Есть ли любимые цветы?',
+        options: [
+            { text: 'Да', icon: 'fas fa-check', value: 'да' },
+            { text: 'Нет', icon: 'fas fa-times', value: 'нет' }
+        ]
+    },
+    {
         id: 'note',
         text: 'Нужна ли записка к букету?',
         options: [
@@ -93,19 +104,15 @@ const progressStep = document.getElementById('progressStep');
 const root = document.documentElement;
 
 // Конфигурация
-// Конфигурация
-const SITE_URL = 'http://localhost:3000'; // Явно указываем порт сервера
-// Или если хотите автоматически определять:
-// const SITE_URL = window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost' 
-//     ? 'http://localhost:3000' 
-//     : window.location.origin;
+const SITE_URL = 'http://localhost:3000';
 
 // Функция для обновления прогресс-бара
 function updateProgressBar() {
-    const progress = ((state.currentQuestion) / 5) * 100;
+    const totalQuestions = 6;
+    const progress = ((state.currentQuestion) / totalQuestions) * 100;
     root.style.setProperty('--progress', `${progress}%`);
     progressFill.style.width = `${progress}%`;
-    progressStep.textContent = state.currentQuestion === 6 ? 'Генерация букета...' : `Вопрос ${state.currentQuestion + 1} из 5`;
+    progressStep.textContent = state.currentQuestion === totalQuestions ? 'Генерация букета...' : `Вопрос ${state.currentQuestion + 1} из ${totalQuestions}`;
 }
 
 // Функция для показа индикатора набора
@@ -221,7 +228,6 @@ async function sendPromptToServer(prompt, orderId) {
     state.generationRequestId = requestId;
     
     try {
-        // Сначала сохраняем промпт
         await fetch(`${SITE_URL}/api/save-prompt`, {
             method: 'POST',
             headers: {
@@ -235,7 +241,6 @@ async function sendPromptToServer(prompt, orderId) {
             })
         });
 
-        // Затем запускаем генерацию
         const response = await fetch(`${SITE_URL}/api/generate`, {
             method: 'POST',
             headers: {
@@ -285,7 +290,7 @@ async function checkGenerationStatus(requestId) {
 
 // Функция для ожидания генерации
 async function waitForGeneration(requestId) {
-    const maxAttempts = 60; // Максимум 60 секунд
+    const maxAttempts = 60;
     let attempts = 0;
     
     while (attempts < maxAttempts) {
@@ -349,7 +354,6 @@ function handleSendLink() {
     setTimeout(() => {
         removeTypingIndicator(typingIndicator);
         
-        // Формируем прямую ссылку для теста
         const testLink = `${SITE_URL}/test.html?order=${state.orderId}`;
         
         addMessage(`Отлично! Отправьте получателю эту ссылку для прохождения теста:`, false);
@@ -369,7 +373,6 @@ function handleSendLink() {
         const lastMessage = chatMessages.lastChild;
         lastMessage.appendChild(linkDiv);
         
-        // Показываем индикатор ожидания
         showWaitingIndicator();
         
         state.currentStep = 'waitingForRecipient';
@@ -492,6 +495,32 @@ function handleOptionSelect(value) {
     const selectedOption = currentQuestion.options.find(opt => opt.value === value);
     addMessage(selectedOption.text, true);
 
+    if (currentQuestion.id === 'favoriteFlowers') {
+        if (value === 'да') {
+            state.isWaitingForFavoriteFlowers = true;
+            addMessage('Напишите, какие цветы любимые)', false);
+            
+            setTimeout(() => {
+                chatInputContainer.style.display = 'flex';
+                userInput.focus();
+            }, 400);
+            
+            return;
+        } else {
+            setTimeout(() => {
+                state.currentQuestion++;
+                updateProgressBar();
+
+                if (state.currentQuestion < questions.length) {
+                    askNextQuestion();
+                } else {
+                    startBouquetGeneration();
+                }
+            }, 800);
+            return;
+        }
+    }
+
     if (currentQuestion.id === 'note' && value === 'своя') {
         state.isWaitingForNoteText = true;
         addMessage('Напишите текст записки ✍️', false);
@@ -575,6 +604,7 @@ function generatePrompt() {
     const occasion = state.answers.occasion || 'особый случай';
     const age = state.answers.age || 'взрослый';
     const colors = state.answers.colors || 'пастельные';
+    const favoriteFlowers = state.answers.favoriteFlowers === 'да' ? state.answers.favoriteFlowersText : null;
     
     const colorMap = {
         'пастельные': 'soft pastel pink, lavender, mint green, pale yellow',
@@ -616,6 +646,11 @@ function generatePrompt() {
     prompt += `${occasionMap[occasion] || 'elegant floral arrangement'}, `;
     prompt += `${forWhomMap[forWhom] || 'for special person'}, `;
     prompt += `${ageMap[age] || 'elegant'}, `;
+    
+    if (favoriteFlowers) {
+        prompt += `made with ${favoriteFlowers}, `;
+    }
+    
     prompt += `highly detailed, photorealistic, 8k resolution, professional lighting, soft shadows, white background, studio shot, commercial product photography, ultra realistic, sharp focus, florist quality, fresh flowers, dew drops, premium arrangement`;
     
     if (state.answers.note && state.answers.note !== 'нет' && state.answers.note !== 'не знаю') {
@@ -786,7 +821,12 @@ function generateBouquetDescription() {
         occasionDescription = 'Этот букет рассказывает историю ваших отношений — от первых нежных чувств до глубокой привязанности, которая с годами только крепнет.';
     }
 
-    return `${baseDescription} ${colorDescription} ${occasionDescription} Я тщательно подобрала каждый элемент, чтобы создать гармоничную композицию, которая будет радовать получателя и точно передаст ваши чувства.`;
+    let favoriteFlowersText = '';
+    if (state.answers.favoriteFlowers === 'да' && state.answers.favoriteFlowersText) {
+        favoriteFlowersText = ` В букете использованы ваши любимые цветы: ${state.answers.favoriteFlowersText}.`;
+    }
+
+    return `${baseDescription} ${colorDescription} ${occasionDescription}${favoriteFlowersText} Я тщательно подобрала каждый элемент, чтобы создать гармоничную композицию, которая будет радовать получателя и точно передаст ваши чувства.`;
 }
 
 // Функция для связи с флористом
@@ -799,6 +839,10 @@ function connectToFlorist() {
 • Цвета: ${getOptionText('colors')}
 • Записка: ${state.answers.noteText || getOptionText('note')}
 • Повод: ${getOptionText('occasion')}`;
+
+    if (state.answers.favoriteFlowers === 'да' && state.answers.favoriteFlowersText) {
+        orderDetails += `\n• Любимые цветы: ${state.answers.favoriteFlowersText}`;
+    }
 
     if (state.currentImageUrl) {
         orderDetails += `\n\n🔗 Ссылка на изображение букета: ${state.currentImageUrl}`;
@@ -827,9 +871,13 @@ function restartQuestionnaire() {
         colors: null,
         note: null,
         occasion: null,
+        favoriteFlowers: null,
+        favoriteFlowersText: null,
         noteText: null
     };
     state.isGenerating = false;
+    state.isWaitingForNoteText = false;
+    state.isWaitingForFavoriteFlowers = false;
     state.currentImageUrl = null;
     state.orderId = null;
     state.generationRequestId = null;
@@ -890,6 +938,21 @@ sendButton.addEventListener('click', () => {
         state.answers.noteText = message;
         state.answers.note = 'своя';
         state.isWaitingForNoteText = false;
+        chatInputContainer.style.display = 'none';
+
+        state.currentQuestion++;
+        updateProgressBar();
+
+        setTimeout(() => {
+            if (state.currentQuestion < questions.length) {
+                askNextQuestion();
+            } else {
+                startBouquetGeneration();
+            }
+        }, 600);
+    } else if (state.isWaitingForFavoriteFlowers) {
+        state.answers.favoriteFlowersText = message;
+        state.isWaitingForFavoriteFlowers = false;
         chatInputContainer.style.display = 'none';
 
         state.currentQuestion++;
