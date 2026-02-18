@@ -5,13 +5,13 @@ const axios = require('axios');
 const fs = require('fs-extra');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
+const cloudinary = require('cloudinary').v2; // Добавляем Cloudinary
 
 const app = express();
 
 // Middleware
-// В начале файла, после создания app
 app.use(cors({
-    origin: ['http://127.0.0.1:5501', 'http://localhost:5501', 'http://localhost:3000'],
+    origin: ['http://127.0.0.1:5501', 'http://localhost:5501', 'http://localhost:3000', 'https://floramind-7idk.onrender.com'],
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
@@ -24,7 +24,13 @@ const YANDEX_FOLDER_ID = process.env.YANDEX_FOLDER_ID;
 const YANDEX_API_KEY = process.env.YANDEX_API_KEY;
 const PORT = process.env.PORT || 3000;
 const SITE_URL = process.env.SITE_URL || `http://localhost:${PORT}`;
-const UPLOAD_DIR = process.env.UPLOAD_DIR || './uploads';
+
+// Конфигурация Cloudinary
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET
+});
 
 // Проверка конфигурации
 if (!YANDEX_FOLDER_ID || !YANDEX_API_KEY) {
@@ -32,9 +38,13 @@ if (!YANDEX_FOLDER_ID || !YANDEX_API_KEY) {
     process.exit(1);
 }
 
-// Создаем папки
-fs.ensureDirSync(UPLOAD_DIR);
-fs.ensureDirSync(path.join(__dirname, 'public', 'generated'));
+if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+    console.error('❌ Cloudinary credentials not found in .env file');
+    process.exit(1);
+}
+
+// Создаем папки (оставляем для временных файлов, но они больше не нужны для хранения)
+fs.ensureDirSync('./temp');
 
 // URL для YandexART API
 const YANDEX_ART_URL = 'https://llm.api.cloud.yandex.net/foundationModels/v1/imageGenerationAsync';
@@ -126,21 +136,50 @@ async function generateWithYandexART(prompt) {
     }
 }
 
-// Сохранение изображения на диск
-async function saveImageToDisk(base64Image, requestId) {
+// Сохранение изображения в Cloudinary (вместо диска)
+async function saveImageToCloudinary(base64Image, requestId) {
     try {
+        // Очищаем base64 от префикса data:image/jpeg;base64, если он есть
         const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, '');
-        const imageBuffer = Buffer.from(base64Data, 'base64');
         
-        const filename = `${requestId}_${Date.now()}.jpg`;
-        const filepath = path.join(__dirname, 'public', 'generated', filename);
+        console.log('☁️ Загружаем изображение в Cloudinary...');
         
-        await fs.writeFile(filepath, imageBuffer);
+        // Загружаем в Cloudinary
+        const result = await cloudinary.uploader.upload(`data:image/jpeg;base64,${base64Data}`, {
+            public_id: `${requestId}_${Date.now()}`,
+            folder: 'floramind',
+            format: 'jpg',
+            transformation: [
+                { quality: 'auto', fetch_format: 'auto' } // Автоматическая оптимизация
+            ]
+        });
         
-        return `${SITE_URL}/generated/${filename}`;
+        console.log(`✅ Изображение загружено в Cloudinary: ${result.secure_url}`);
+        
+        // Возвращаем безопасный URL от Cloudinary
+        return result.secure_url;
+        
     } catch (error) {
-        console.error('❌ Ошибка сохранения изображения:', error);
-        throw error;
+        console.error('❌ Ошибка загрузки в Cloudinary:', error);
+        
+        // Fallback: пробуем сохранить локально если Cloudinary не работает
+        try {
+            console.log('⚠️ Пробуем сохранить локально как запасной вариант...');
+            const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, '');
+            const imageBuffer = Buffer.from(base64Data, 'base64');
+            
+            const filename = `${requestId}_${Date.now()}.jpg`;
+            const filepath = path.join(__dirname, 'public', 'generated', filename);
+            
+            await fs.ensureDir(path.join(__dirname, 'public', 'generated'));
+            await fs.writeFile(filepath, imageBuffer);
+            
+            console.log(`✅ Изображение сохранено локально: ${filename}`);
+            return `${SITE_URL}/generated/${filename}`;
+        } catch (fallbackError) {
+            console.error('❌ Ошибка локального сохранения:', fallbackError);
+            throw error;
+        }
     }
 }
 
@@ -193,8 +232,8 @@ app.post('/api/generate', async (req, res) => {
         // Генерируем изображение
         const imageBase64 = await generateWithYandexART(prompt);
         
-        // Сохраняем на диск
-        const imageUrl = await saveImageToDisk(imageBase64, genRequestId);
+        // Сохраняем в Cloudinary (вместо диска)
+        const imageUrl = await saveImageToCloudinary(imageBase64, genRequestId);
         
         // Обновляем статус
         const request = generationRequests.get(genRequestId);
@@ -310,10 +349,34 @@ app.get('/api/test-connection', async (req, res) => {
     }
 });
 
+// Новый тестовый эндпоинт для Cloudinary
+app.get('/api/test-cloudinary', async (req, res) => {
+    try {
+        // Пробуем загрузить тестовое изображение
+        const testResult = await cloudinary.uploader.upload('https://res.cloudinary.com/demo/image/upload/sample.jpg', {
+            public_id: 'test_' + Date.now(),
+            folder: 'floramind_test'
+        });
+        
+        res.json({
+            success: true,
+            message: '✅ Cloudinary работает',
+            testUrl: testResult.secure_url
+        });
+    } catch (error) {
+        res.json({
+            success: false,
+            message: '❌ Ошибка Cloudinary',
+            error: error.message
+        });
+    }
+});
+
 app.get('/api/test', (req, res) => {
     res.json({ 
         status: '✅ FloraAI server is running!',
         yandexIntegration: 'YandexART API',
+        cloudinaryIntegration: 'Cloudinary',
         siteUrl: SITE_URL
     });
 });
@@ -344,5 +407,6 @@ app.get('/', (req, res) => {
 app.listen(PORT, () => {
     console.log(`\n🚀 FloraAI server running on http://localhost:${PORT}`);
     console.log(`📝 Test endpoint: http://localhost:${PORT}/api/test`);
+    console.log(`📝 Cloudinary test: http://localhost:${PORT}/api/test-cloudinary`);
     console.log(`🔗 YandexART API: ${YANDEX_ART_URL}\n`);
 });
