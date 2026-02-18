@@ -346,9 +346,3 @@ app.listen(PORT, () => {
     console.log(`📝 Test endpoint: http://localhost:${PORT}/api/test`);
     console.log(`🔗 YandexART API: ${YANDEX_ART_URL}\n`);
 });
-
-app.listen(PORT, () => {
-    console.log(`\n🚀 FloraAI server running on http://localhost:${PORT}`);
-    console.log(`📝 Test endpoint: http://localhost:${PORT}/api/test`);
-    console.log(`🔗 YandexART API: ${YANDEX_ART_URL}\n`);
-});
