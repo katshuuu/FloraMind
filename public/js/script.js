@@ -15,12 +15,13 @@ const state = {
     isGenerating: false,
     isWaitingForNoteText: false,
     isWaitingForFavoriteFlowers: false,
+    isWaitingForOrderAction: false, // Новый флаг для ожидания действия после генерации
     currentImageUrl: null,
     orderId: null,
     generationRequestId: null
 };
 
-// Вопросы для опроса (используются только когда пользователь отвечает сам)
+// Вопросы для опроса
 const questions = [
     {
         id: 'forWhom',
@@ -714,6 +715,11 @@ async function startBouquetGeneration() {
             
             showGeneratedBouquet(result.imageUrl);
             
+            // После показа букета задаем дополнительный вопрос
+            setTimeout(() => {
+                askOrderQuestion();
+            }, 2000);
+            
         } catch (error) {
             console.error('Generation error:', error);
             
@@ -725,6 +731,61 @@ async function startBouquetGeneration() {
             addMessage(`⚠️ Произошла ошибка при генерации изображения. Пожалуйста, попробуйте еще раз или свяжитесь с флористом напрямую.`, false);
         }
     }, 1500);
+}
+
+// Новая функция для вопроса после генерации
+function askOrderQuestion() {
+    state.isWaitingForOrderAction = true;
+    
+    const orderQuestion = document.createElement('div');
+    orderQuestion.className = 'message ai-message';
+    orderQuestion.innerHTML = `
+        <div class="message-header">
+            <i class="fas fa-spa"></i>
+            <span>FloraAI</span>
+        </div>
+        <p>Хотите оформить заказ этого букета?</p>
+        <div class="options-container">
+            <div class="options-grid">
+                <button class="option-btn" id="orderYesBtn">
+                    <div class="option-icon">
+                        <i class="fas fa-check"></i>
+                    </div>
+                    Да, связаться с флористом
+                </button>
+                <button class="option-btn" id="orderNoBtn">
+                    <div class="option-icon">
+                        <i class="fas fa-times"></i>
+                    </div>
+                    Нет, создать другой букет
+                </button>
+            </div>
+        </div>
+    `;
+    
+    chatMessages.appendChild(orderQuestion);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+    
+    setTimeout(() => {
+        const yesBtn = document.getElementById('orderYesBtn');
+        const noBtn = document.getElementById('orderNoBtn');
+        
+        if (yesBtn) {
+            yesBtn.addEventListener('click', () => {
+                addMessage('Да, связаться с флористом', true);
+                state.isWaitingForOrderAction = false;
+                connectToFlorist();
+            });
+        }
+        
+        if (noBtn) {
+            noBtn.addEventListener('click', () => {
+                addMessage('Нет, создать другой букет', true);
+                state.isWaitingForOrderAction = false;
+                restartQuestionnaire();
+            });
+        }
+    }, 100);
 }
 
 // Функция для показа сгенерированного букета
@@ -770,15 +831,6 @@ function showGeneratedBouquet(imageUrl) {
                     <div class="detail-card-value">${getOptionText('occasion')}</div>
                 </div>
             </div>
-            
-            <div class="action-buttons" style="display: flex;" id="actionButtons">
-                <button class="action-btn order-btn" id="orderBtn">
-                    <i class="fab fa-telegram"></i> Связаться с флористом 🌸
-                </button>
-                <button class="action-btn restart-btn" id="restartBtn">
-                    <i class="fas fa-redo"></i> Создать новый букет
-                </button>
-            </div>
         </div>
     `;
 
@@ -790,14 +842,6 @@ function showGeneratedBouquet(imageUrl) {
     
     state.currentImageUrl = imageUrl;
     state.currentStep = 'completed';
-
-    setTimeout(() => {
-        const orderBtn = document.getElementById('orderBtn');
-        const restartBtn = document.getElementById('restartBtn');
-        
-        if (orderBtn) orderBtn.addEventListener('click', connectToFlorist);
-        if (restartBtn) restartBtn.addEventListener('click', restartQuestionnaire);
-    }, 100);
 }
 
 // Функция для получения текста опции
@@ -897,6 +941,7 @@ function restartQuestionnaire() {
     state.isGenerating = false;
     state.isWaitingForNoteText = false;
     state.isWaitingForFavoriteFlowers = false;
+    state.isWaitingForOrderAction = false;
     state.currentImageUrl = null;
     state.orderId = null;
     state.generationRequestId = null;
