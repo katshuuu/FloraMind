@@ -105,7 +105,7 @@ const progressStep = document.getElementById('progressStep');
 const root = document.documentElement;
 
 // Конфигурация
-const SITE_URL = 'http://localhost:3000';
+const SITE_URL = window.location.origin;
 const TELEGRAM_BOT_LINK = '@YourVibeCheck_Bot';
 
 // Функция для обновления прогресс-бара

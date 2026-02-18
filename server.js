@@ -15,7 +15,7 @@ app.use(cors({
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
-app.use(cors());
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static('public'));
 
@@ -334,6 +334,18 @@ setInterval(() => {
         }
     }
 }, 60 * 60 * 1000);
+
+// Корневой маршрут - отдаем index.html из папки public
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Запуск сервера
+app.listen(PORT, () => {
+    console.log(`\n🚀 FloraAI server running on http://localhost:${PORT}`);
+    console.log(`📝 Test endpoint: http://localhost:${PORT}/api/test`);
+    console.log(`🔗 YandexART API: ${YANDEX_ART_URL}\n`);
+});
 
 app.listen(PORT, () => {
     console.log(`\n🚀 FloraAI server running on http://localhost:${PORT}`);
