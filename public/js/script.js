@@ -805,8 +805,8 @@ function showGeneratedBouquet(imageUrl) {
                 <div class="result-subtitle">Создано с помощью YandexART</div>
             </div>
             
-            <div class="bouquet-image-container">
-                <img class="bouquet-image" src="${imageUrl}" alt="Ваш уникальный букет" style="display: block; width: 100%; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.2);">
+            <div class="bouquet-image-container" style="text-align: center; overflow-x: auto; max-width: 100%; margin: 20px 0;">
+                <img class="bouquet-image" src="${imageUrl}" alt="Ваш уникальный букет" style="display: inline-block; width: auto; max-width: none; height: auto; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.2);">
             </div>
             
             <div class="bouquet-description">
@@ -1207,6 +1207,52 @@ style.textContent = `
         opacity: 0.8;
     }
 `;
+
+// Добавляем новые стили в конец существующей секции style
+const additionalStyles = `
+    .bouquet-image-container {
+        text-align: center !important;
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+        max-width: 100% !important;
+        margin: 20px 0 !important;
+        background: #f5f5f5;
+        border-radius: 12px;
+        padding: 10px 0;
+    }
+    
+    .bouquet-image {
+        display: inline-block !important;
+        width: auto !important;
+        max-width: none !important;
+        height: auto !important;
+        border-radius: 12px !important;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.2) !important;
+    }
+    
+    /* Стили для скроллбара (опционально) */
+    .bouquet-image-container::-webkit-scrollbar {
+        height: 8px;
+    }
+    
+    .bouquet-image-container::-webkit-scrollbar-track {
+        background: #f1f1f1;
+        border-radius: 4px;
+    }
+    
+    .bouquet-image-container::-webkit-scrollbar-thumb {
+        background: #888;
+        border-radius: 4px;
+    }
+    
+    .bouquet-image-container::-webkit-scrollbar-thumb:hover {
+        background: #555;
+    }
+`;
+
+// Добавляем новые стили к существующим
+const style = document.createElement('style');
+style.textContent = (style.textContent || '') + additionalStyles;
 
 document.head.appendChild(style);
 
