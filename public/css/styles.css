@@ -1,12 +1,12 @@
- * {
+* {
      margin: 0;
      padding: 0;
      box-sizing: border-box;
  }
 
  :root {
-     --primary: #d656b1;
-     --primary-light: #d39bcb;
+     --primary: #8f1010;
+     --primary-light: #ffc9c9;
      --secondary: #d23f5f;
      --accent: #4fd1c7;
      --success: #38b2ac;
